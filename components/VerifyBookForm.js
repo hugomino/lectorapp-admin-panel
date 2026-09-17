@@ -2,10 +2,19 @@
 
 import { useState } from 'react';
 
+function normalize(value) {
+  return (value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 export default function VerifyBookForm({ book, verifyBook }) {
   const needsChoice = Boolean(book.amazon_cover_url);
   const [coverChoice, setCoverChoice] = useState(null);
+  const [title, setTitle] = useState(book.title || '');
+  const [author, setAuthor] = useState(book.author || '');
   const canSubmit = !needsChoice || coverChoice !== null;
+
+  const titleMismatch = Boolean(book.amazon_title) && normalize(title) !== normalize(book.amazon_title);
+  const authorMismatch = Boolean(book.amazon_author) && normalize(author) !== normalize(book.amazon_author);
 
   return (
     <form action={verifyBook} className="flex gap-4">
@@ -58,8 +67,26 @@ export default function VerifyBookForm({ book, verifyBook }) {
       </div>
 
       <div className="min-w-0 flex-1">
-        <p className="truncate font-medium text-slate-900">{book.title}</p>
-        <p className="truncate text-sm text-slate-600">{book.author}</p>
+        <input
+          name="title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className={`w-full rounded-md border px-2 py-1 text-sm font-medium ${
+            titleMismatch ? 'border-red-400 bg-red-50 text-red-700' : 'border-slate-200 text-slate-900'
+          }`}
+        />
+        {titleMismatch && <p className="mt-0.5 text-xs text-red-600">Amazon: {book.amazon_title}</p>}
+
+        <input
+          name="author"
+          value={author}
+          onChange={(e) => setAuthor(e.target.value)}
+          className={`mt-1 w-full rounded-md border px-2 py-1 text-sm ${
+            authorMismatch ? 'border-red-400 bg-red-50 text-red-700' : 'border-slate-200 text-slate-600'
+          }`}
+        />
+        {authorMismatch && <p className="mt-0.5 text-xs text-red-600">Amazon: {book.amazon_author}</p>}
+
         <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500">
           <div>
             <dt className="inline font-medium">ISBN: </dt>

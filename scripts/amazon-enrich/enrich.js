@@ -62,8 +62,15 @@ async function findFirstOrganicResult(page) {
     if (!asin) continue;
 
     const coverUrl = await card.locator('img.s-image').first().getAttribute('src').catch(() => null);
+    const title = await card.locator('h2').first().getAttribute('aria-label').catch(() => null);
+    const authorRow = await card
+      .locator('[data-cy="title-recipe"] .a-color-secondary')
+      .first()
+      .innerText()
+      .catch(() => null);
+    const author = authorRow ? authorRow.replace(/^de\s+/i, '').trim() || null : null;
 
-    return { asin: asin.toUpperCase(), coverUrl };
+    return { asin: asin.toUpperCase(), coverUrl, title, author };
   }
 
   return null;
@@ -93,6 +100,8 @@ async function enrichBook(page, book) {
     .update({
       affiliate_url: affiliateUrl,
       amazon_cover_url: result.coverUrl || null,
+      amazon_title: result.title || null,
+      amazon_author: result.author || null,
     })
     .eq('id', book.id);
 
@@ -150,7 +159,7 @@ async function main() {
     const { data: books, error } = await supabase
       .from('books')
       .select('id, title, isbn, isbn13')
-      .is('affiliate_url', null)
+      .or('affiliate_url.is.null,amazon_title.is.null')
       .order('id', { ascending: true });
 
     if (error) {
@@ -159,7 +168,7 @@ async function main() {
       return;
     }
 
-    console.log(`${books.length} libros sin affiliate_url.`);
+    console.log(`${books.length} libros sin affiliate_url o sin título/autor de Amazon.`);
 
     const browser = await chromium.launch({ headless: true });
     const context = await browser.newContext({

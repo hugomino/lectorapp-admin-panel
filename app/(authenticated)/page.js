@@ -8,7 +8,9 @@ async function getPendingBooks() {
   const supabase = supabaseAdmin();
   const { data, error } = await supabase
     .from('books')
-    .select('id, title, author, isbn, isbn13, pages, cover_url, amazon_cover_url, synopsis, affiliate_url, manual_entry')
+    .select(
+      'id, title, author, isbn, isbn13, pages, cover_url, amazon_cover_url, amazon_title, amazon_author, synopsis, affiliate_url, manual_entry'
+    )
     .is('confirmed', null)
     .order('id', { ascending: true });
 

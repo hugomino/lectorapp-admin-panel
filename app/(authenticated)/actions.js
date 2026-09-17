@@ -36,6 +36,11 @@ export async function verifyBook(formData) {
     updates.cover_source = 'amazon';
   }
 
+  const title = formData.get('title')?.toString().trim();
+  const author = formData.get('author')?.toString().trim();
+  if (title) updates.title = title;
+  if (author) updates.author = author;
+
   const { error: updateError } = await supabase.from('books').update(updates).eq('id', bookId);
   if (updateError) throw new Error(updateError.message);
 
