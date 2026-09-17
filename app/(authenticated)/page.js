@@ -20,7 +20,7 @@ export default async function PanelPage() {
   const books = await getPendingBooks();
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
+    <main className="mx-auto max-w-5xl px-4 py-8">
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold">Libros pendientes de revisar</h1>

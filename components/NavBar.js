@@ -13,7 +13,7 @@ export default function NavBar() {
 
   return (
     <nav className="border-b border-slate-200 bg-white">
-      <div className="mx-auto flex max-w-3xl items-center justify-between px-4">
+      <div className="mx-auto flex max-w-5xl items-center justify-between px-4">
         <div className="flex gap-1">
           {TABS.map((tab) => {
             const isActive = pathname === tab.href;
