@@ -1,4 +1,4 @@
-import { supabaseAdmin } from '../../lib/supabaseAdmin';
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { verifyBook, rejectBook } from './actions';
 
 export const dynamic = 'force-dynamic';
@@ -25,16 +25,9 @@ export default async function PanelPage() {
           <h1 className="text-xl font-semibold">Libros pendientes de revisar</h1>
           <p className="text-sm text-slate-500">{books.length} pendientes</p>
         </div>
-        <div className="flex gap-3">
-          <a href="/" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100">
-            Actualizar
-          </a>
-          <form action="/api/logout" method="POST">
-            <button type="submit" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100">
-              Salir
-            </button>
-          </form>
-        </div>
+        <a href="/" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100">
+          Actualizar
+        </a>
       </div>
 
       {books.length === 0 && (

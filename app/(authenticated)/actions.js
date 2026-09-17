@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { supabaseAdmin } from '../../lib/supabaseAdmin';
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
 function adminUserId() {
   return process.env.ADMIN_USER_ID || null;

@@ -5,7 +5,8 @@
   "description": "Script local (no se despliega) que rellena affiliate_url y amazon_cover_url en books buscando cada ISBN en amazon.es con Playwright.",
   "type": "commonjs",
   "scripts": {
-    "enrich": "node enrich.js"
+    "enrich": "node enrich.js",
+    "enrich:scheduled": "node enrich.js --if-pending"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
