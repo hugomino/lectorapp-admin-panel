@@ -7,7 +7,7 @@ async function getPendingBooks() {
   const supabase = supabaseAdmin();
   const { data, error } = await supabase
     .from('books')
-    .select('id, title, author, isbn, isbn13, pages, cover_url, synopsis, affiliate_url, manual_entry')
+    .select('id, title, author, isbn, isbn13, pages, cover_url, amazon_cover_url, synopsis, affiliate_url, manual_entry')
     .is('confirmed', null)
     .order('id', { ascending: true });
 
@@ -46,14 +46,30 @@ export default async function PanelPage() {
       <ul className="space-y-4">
         {books.map((book) => (
           <li key={book.id} className="flex gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            {book.cover_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={book.cover_url} alt="" className="h-32 w-24 flex-none rounded-md object-cover" />
-            ) : (
-              <div className="flex h-32 w-24 flex-none items-center justify-center rounded-md bg-slate-100 text-xs text-slate-400">
-                Sin portada
+            <div className="flex flex-none gap-1.5">
+              <div className="flex flex-col items-center gap-1">
+                {book.cover_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={book.cover_url} alt="" className="h-32 w-24 rounded-md object-cover" />
+                ) : (
+                  <div className="flex h-32 w-24 items-center justify-center rounded-md bg-slate-100 text-xs text-slate-400">
+                    Sin portada
+                  </div>
+                )}
+                <span className="text-[10px] text-slate-400">Open Library</span>
               </div>
-            )}
+              <div className="flex flex-col items-center gap-1">
+                {book.amazon_cover_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={book.amazon_cover_url} alt="" className="h-32 w-24 rounded-md object-cover" />
+                ) : (
+                  <div className="flex h-32 w-24 items-center justify-center rounded-md bg-slate-100 text-xs text-slate-400">
+                    Sin Amazon
+                  </div>
+                )}
+                <span className="text-[10px] text-slate-400">Amazon</span>
+              </div>
+            </div>
 
             <div className="min-w-0 flex-1">
               <p className="truncate font-medium text-slate-900">{book.title}</p>
