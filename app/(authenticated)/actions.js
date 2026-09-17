@@ -7,17 +7,36 @@ function adminUserId() {
   return process.env.ADMIN_USER_ID || null;
 }
 
-export async function verifyBook(bookId) {
+export async function verifyBook(formData) {
+  const bookId = Number(formData.get('bookId'));
+  const coverChoice = formData.get('coverChoice'); // 'own' | 'amazon' | null (sin portada de Amazon aún)
   const supabase = supabaseAdmin();
 
-  const { error: updateError } = await supabase
+  const { data: book, error: fetchError } = await supabase
     .from('books')
-    .update({
-      confirmed: true,
-      confirmed_at: new Date().toISOString(),
-      confirmation_method: 'manual_admin',
-    })
-    .eq('id', bookId);
+    .select('amazon_cover_url')
+    .eq('id', bookId)
+    .single();
+  if (fetchError) throw new Error(fetchError.message);
+
+  // Si hay portada de Amazon, elegir una de las dos es obligatorio — esto
+  // repite en el servidor la validación del cliente por si acaso.
+  if (book?.amazon_cover_url && coverChoice !== 'own' && coverChoice !== 'amazon') {
+    throw new Error('Elige qué portada usar antes de verificar.');
+  }
+
+  const updates = {
+    confirmed: true,
+    confirmed_at: new Date().toISOString(),
+    confirmation_method: 'manual_admin',
+  };
+
+  if (coverChoice === 'amazon' && book?.amazon_cover_url) {
+    updates.cover_url = book.amazon_cover_url;
+    updates.cover_source = 'amazon';
+  }
+
+  const { error: updateError } = await supabase.from('books').update(updates).eq('id', bookId);
   if (updateError) throw new Error(updateError.message);
 
   const { error: logError } = await supabase.from('book_review_log').insert({

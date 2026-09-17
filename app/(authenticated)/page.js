@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import VerifyBookForm from '@/components/VerifyBookForm';
 import { verifyBook, rejectBook } from './actions';
 
 export const dynamic = 'force-dynamic';
@@ -38,92 +39,29 @@ export default async function PanelPage() {
 
       <ul className="space-y-4">
         {books.map((book) => (
-          <li key={book.id} className="flex gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex flex-none gap-1.5">
-              <div className="flex flex-col items-center gap-1">
-                {book.cover_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={book.cover_url} alt="" className="h-32 w-24 rounded-md object-cover" />
-                ) : (
-                  <div className="flex h-32 w-24 items-center justify-center rounded-md bg-slate-100 text-xs text-slate-400">
-                    Sin portada
-                  </div>
-                )}
-                <span className="text-[10px] text-slate-400">Open Library</span>
-              </div>
-              <div className="flex flex-col items-center gap-1">
-                {book.amazon_cover_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={book.amazon_cover_url} alt="" className="h-32 w-24 rounded-md object-cover" />
-                ) : (
-                  <div className="flex h-32 w-24 items-center justify-center rounded-md bg-slate-100 text-xs text-slate-400">
-                    Sin Amazon
-                  </div>
-                )}
-                <span className="text-[10px] text-slate-400">Amazon</span>
-              </div>
-            </div>
+          <li key={book.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <VerifyBookForm book={book} verifyBook={verifyBook} />
 
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-medium text-slate-900">{book.title}</p>
-              <p className="truncate text-sm text-slate-600">{book.author}</p>
-              <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500">
-                <div>
-                  <dt className="inline font-medium">ISBN: </dt>
-                  <dd className="inline">{book.isbn13 || book.isbn || '—'}</dd>
-                </div>
-                <div>
-                  <dt className="inline font-medium">Páginas: </dt>
-                  <dd className="inline">{book.pages ?? '—'}</dd>
-                </div>
-                <div className="col-span-2">
-                  <dt className="inline font-medium">Alta manual: </dt>
-                  <dd className="inline">{book.manual_entry ? 'Sí' : 'No'}</dd>
-                </div>
-                {book.affiliate_url && (
-                  <div className="col-span-2 truncate">
-                    <dt className="inline font-medium">Afiliado: </dt>
-                    <dd className="inline">
-                      <a href={book.affiliate_url} target="_blank" rel="noreferrer" className="text-blue-600 underline">
-                        {book.affiliate_url}
-                      </a>
-                    </dd>
-                  </div>
-                )}
-              </dl>
-
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <form action={verifyBook.bind(null, book.id)}>
-                  <button
-                    type="submit"
-                    className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700"
-                  >
-                    Verificar
-                  </button>
-                </form>
-
-                <details className="group">
-                  <summary className="cursor-pointer list-none rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700">
-                    Rechazar
-                  </summary>
-                  <form action={rejectBook} className="mt-2 flex flex-col gap-2">
-                    <input type="hidden" name="bookId" value={book.id} />
-                    <textarea
-                      name="notes"
-                      placeholder="Motivo del rechazo (opcional)"
-                      rows={2}
-                      className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
-                    />
-                    <button
-                      type="submit"
-                      className="self-start rounded-md border border-red-600 px-3 py-1 text-sm font-medium text-red-600 hover:bg-red-50"
-                    >
-                      Confirmar rechazo
-                    </button>
-                  </form>
-                </details>
-              </div>
-            </div>
+            <details className="group mt-3">
+              <summary className="w-fit cursor-pointer list-none rounded-md bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700">
+                Rechazar
+              </summary>
+              <form action={rejectBook} className="mt-2 flex flex-col gap-2">
+                <input type="hidden" name="bookId" value={book.id} />
+                <textarea
+                  name="notes"
+                  placeholder="Motivo del rechazo (opcional)"
+                  rows={2}
+                  className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+                />
+                <button
+                  type="submit"
+                  className="self-start rounded-md border border-red-600 px-3 py-1 text-sm font-medium text-red-600 hover:bg-red-50"
+                >
+                  Confirmar rechazo
+                </button>
+              </form>
+            </details>
           </li>
         ))}
       </ul>
