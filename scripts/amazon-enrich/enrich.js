@@ -45,17 +45,19 @@ async function findFirstOrganicResult(page) {
   for (let i = 0; i < count; i++) {
     const card = cards.nth(i);
     const text = (await card.innerText().catch(() => '')) || '';
-    if (/patrocinado|sponsored/i.test(text.split('\n')[0] || '')) continue;
+    if (/patrocinado|sponsored/i.test(text)) continue;
 
-    const href = await card.locator('h2 a').first().getAttribute('href').catch(() => null);
-    if (!href) continue;
-
-    const match = href.match(/\/dp\/([A-Z0-9]{10})/i);
-    if (!match) continue;
+    let asin = await card.getAttribute('data-asin').catch(() => null);
+    if (!asin) {
+      const href = await card.locator('a[href*="/dp/"]').first().getAttribute('href').catch(() => null);
+      const match = href ? href.match(/\/dp\/([A-Z0-9]{10})/i) : null;
+      asin = match ? match[1] : null;
+    }
+    if (!asin) continue;
 
     const coverUrl = await card.locator('img.s-image').first().getAttribute('src').catch(() => null);
 
-    return { asin: match[1].toUpperCase(), coverUrl };
+    return { asin: asin.toUpperCase(), coverUrl };
   }
 
   return null;
