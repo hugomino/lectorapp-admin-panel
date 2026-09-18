@@ -22,3 +22,15 @@ export async function requestEnrichRun() {
 
   revalidatePath('/amazon');
 }
+
+export async function saveManualAffiliateLink(formData) {
+  const bookId = Number(formData.get('bookId'));
+  const url = formData.get('affiliateUrl')?.toString().trim();
+  if (!url) return; // nada que guardar, el campo estaba vacío
+
+  const supabase = supabaseAdmin();
+  const { error } = await supabase.from('books').update({ affiliate_url: url }).eq('id', bookId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath('/amazon');
+}

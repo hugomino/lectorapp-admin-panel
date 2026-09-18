@@ -79,7 +79,8 @@ async function findFirstOrganicResult(page) {
 async function enrichBook(page, book) {
   const isbn = book.isbn13 || book.isbn;
   if (!isbn) {
-    return { skipped: true, reason: 'sin ISBN' };
+    // Permanente: sin ISBN nunca se va a poder buscar, da igual cuántas veces se reintente.
+    return { skipped: true, permanent: true, reason: 'sin ISBN' };
   }
 
   await page.goto(`https://www.amazon.es/s?k=${encodeURIComponent(isbn)}`, {
@@ -90,7 +91,9 @@ async function enrichBook(page, book) {
 
   const result = await findFirstOrganicResult(page);
   if (!result || !result.asin) {
-    return { failed: true, reason: 'sin resultado no patrocinado con ASIN' };
+    // Permanente: Amazon no tiene ese ISBN (o solo hay patrocinados) — no va
+    // a cambiar de un run a otro, mejor pedir el link a mano.
+    return { failed: true, permanent: true, reason: 'sin resultado no patrocinado con ASIN' };
   }
 
   const affiliateUrl = `https://www.amazon.es/dp/${result.asin}?tag=${AFFILIATE_TAG}`;
@@ -106,10 +109,17 @@ async function enrichBook(page, book) {
     .eq('id', book.id);
 
   if (error) {
-    return { failed: true, reason: `error de Supabase: ${error.message}` };
+    // No permanente: se encontró el libro en Amazon, solo falló al guardar
+    // en Supabase — vale la pena reintentar en el siguiente run.
+    return { failed: true, permanent: false, reason: `error de Supabase: ${error.message}` };
   }
 
   return { updated: true, affiliateUrl };
+}
+
+async function markLookupFailed(bookId) {
+  const { error } = await supabase.from('books').update({ amazon_lookup_failed: true }).eq('id', bookId);
+  if (error) console.error(`No se pudo marcar amazon_lookup_failed en #${bookId}:`, error.message);
 }
 
 async function shouldRun() {
@@ -160,6 +170,7 @@ async function main() {
       .from('books')
       .select('id, title, isbn, isbn13')
       .or('affiliate_url.is.null,amazon_title.is.null')
+      .eq('amazon_lookup_failed', false)
       .order('id', { ascending: true });
 
     if (error) {
@@ -190,17 +201,23 @@ async function main() {
         const outcome = await enrichBook(page, book);
         if (outcome.skipped) {
           skippedCount++;
-          console.log(`- ${label}: omitido (${outcome.reason})`);
+          const suffix = outcome.permanent ? ', pasa a manual' : '';
+          console.log(`- ${label}: omitido${suffix} (${outcome.reason})`);
+          if (outcome.permanent) await markLookupFailed(book.id);
         } else if (outcome.failed) {
           failures.push({ book, reason: outcome.reason });
-          console.log(`x ${label}: fallo (${outcome.reason})`);
+          const suffix = outcome.permanent ? ', pasa a manual' : ', se reintentará';
+          console.log(`x ${label}: fallo${suffix} (${outcome.reason})`);
+          if (outcome.permanent) await markLookupFailed(book.id);
         } else {
           updatedCount++;
           console.log(`✓ ${label}: ${outcome.affiliateUrl}`);
         }
       } catch (err) {
+        // Excepción no controlada (timeout de red, etc.) — no se marca
+        // permanente, se reintenta en el siguiente run por si fue puntual.
         failures.push({ book, reason: err.message });
-        console.log(`x ${label}: excepción (${err.message})`);
+        console.log(`x ${label}: excepción, se reintentará (${err.message})`);
       }
 
       if (i < books.length - 1) {
