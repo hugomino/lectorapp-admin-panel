@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { requestEnrichRun, saveManualAffiliateLink } from './actions';
+import { isRunningStale } from './stale';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,7 +36,8 @@ function formatDate(value) {
 
 export default async function AmazonPage() {
   const [status, failedBooks] = await Promise.all([getStatus(), getFailedBooks()]);
-  const canTrigger = status.status === 'idle';
+  const stale = isRunningStale(status);
+  const canTrigger = status.status === 'idle' || stale;
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
@@ -54,10 +56,13 @@ export default async function AmazonPage() {
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium text-slate-900">Estado: {STATUS_LABEL[status.status] || status.status}</p>
+            <p className="text-sm font-medium text-slate-900">
+              Estado: {STATUS_LABEL[status.status] || status.status}
+              {stale && ' (parece atascado, puedes relanzarlo)'}
+            </p>
             <p className="mt-1 text-xs text-slate-500">
-              Se ejecuta también automáticamente cada 4h en tu PC (tarea programada de Windows) — el botón solo
-              adelanta la próxima pasada.
+              Al pulsar el botón, la tarea programada de tu PC lo recoge en un máximo de 5 min (el PC debe estar
+              encendido). No se ejecuta nada por su cuenta si no hay una petición pendiente.
             </p>
           </div>
           <form action={requestEnrichRun}>

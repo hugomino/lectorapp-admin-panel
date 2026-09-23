@@ -19,11 +19,15 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
 });
 
-// --if-pending: usado por la tarea programada de Windows (cada 4h). Solo
+// --if-pending: usado por la tarea programada de Windows (cada 5 min). Solo
 // hace algo si el panel ha marcado status='pending'. Sin el flag (ej. `npm
 // run enrich` a mano) siempre corre, y actualiza igualmente el estado para
 // que la pestaña Amazon del panel refleje también las ejecuciones manuales.
 const RUN_ONLY_IF_PENDING = process.argv.includes('--if-pending');
+
+// Un 'running' más viejo que esto se considera muerto (la tarea de Windows
+// mata el proceso a los 30 min).
+const STALE_RUNNING_MS = 35 * 60 * 1000;
 
 function randomDelayMs() {
   return 2000 + Math.floor(Math.random() * 3000);
@@ -125,12 +129,30 @@ async function markLookupFailed(bookId) {
 async function shouldRun() {
   if (!RUN_ONLY_IF_PENDING) return true;
 
-  const { data, error } = await supabase.from('amazon_enrich_status').select('status').eq('id', 1).single();
+  const { data, error } = await supabase
+    .from('amazon_enrich_status')
+    .select('status, started_at')
+    .eq('id', 1)
+    .single();
   if (error) {
     console.error('No se pudo leer amazon_enrich_status:', error.message);
     return false;
   }
-  return data?.status === 'pending';
+  if (data?.status === 'pending') return true;
+
+  // 'running' caducado: un run anterior murió sin pasar por finally (proceso
+  // matado, apagado del PC, límite de tiempo de la tarea). Se recupera para
+  // que el panel no se quede bloqueado para siempre. La tarea usa
+  // MultipleInstances=IgnoreNew, así que no hay riesgo de pisar un run vivo.
+  if (data?.status === 'running' && isStale(data.started_at)) {
+    console.log('Estado "running" caducado, se recupera y se relanza.');
+    return true;
+  }
+  return false;
+}
+
+function isStale(startedAt) {
+  return !startedAt || Date.now() - new Date(startedAt).getTime() > STALE_RUNNING_MS;
 }
 
 async function markRunning() {
