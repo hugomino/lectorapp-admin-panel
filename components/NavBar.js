@@ -7,6 +7,7 @@ const TABS = [
   { href: '/', label: 'Verificación' },
   { href: '/amazon', label: 'Amazon' },
   { href: '/reportes', label: 'Reportes' },
+  { href: '/testers', label: 'Testers' },
 ];
 
 export default function NavBar() {
