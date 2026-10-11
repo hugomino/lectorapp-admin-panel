@@ -6,7 +6,8 @@
   "type": "commonjs",
   "scripts": {
     "enrich": "node enrich.js",
-    "enrich:scheduled": "node enrich.js --if-pending"
+    "enrich:scheduled": "node enrich.js --if-pending",
+    "upgrade-covers": "node upgrade-covers.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

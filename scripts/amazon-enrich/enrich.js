@@ -5,6 +5,7 @@
 require('dotenv').config();
 const { chromium } = require('playwright');
 const { createClient } = require('@supabase/supabase-js');
+const { toHighResCover } = require('./coverUrl');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -65,7 +66,9 @@ async function findFirstOrganicResult(page) {
     }
     if (!asin) continue;
 
-    const coverUrl = await card.locator('img.s-image').first().getAttribute('src').catch(() => null);
+    // El src de la búsqueda es una miniatura de 320 px; se pide la versión grande.
+    const thumbUrl = await card.locator('img.s-image').first().getAttribute('src').catch(() => null);
+    const coverUrl = toHighResCover(thumbUrl);
     const title = await card.locator('h2').first().getAttribute('aria-label').catch(() => null);
     const authorRow = await card
       .locator('[data-cy="title-recipe"] .a-color-secondary')
