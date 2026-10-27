@@ -7,7 +7,8 @@ const TABS = [
   { href: '/', label: 'Verificación' },
   { href: '/amazon', label: 'Amazon' },
   { href: '/reportes', label: 'Reportes' },
-  { href: '/testers', label: 'Testers' },
+  { href: '/ios', label: 'Usuarios iOS' },
+  { href: '/estadisticas', label: 'Estadísticas' },
   { href: '/versiones', label: 'Versiones' },
 ];
 
