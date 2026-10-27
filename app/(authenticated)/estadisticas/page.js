@@ -15,17 +15,16 @@ async function countProfiles(...filters) {
 }
 
 async function loadStats() {
-  const [total, active1d, active30d, new1d, new30d, total30dAgo, cohortOld, cohortRetained] = await Promise.all([
+  const [total, active1d, active30d, new1d, new30d, total30dAgo, cohortRetained] = await Promise.all([
     countProfiles(),
     countProfiles(['gte', 'last_active_at', DAY_MS]),
     countProfiles(['gte', 'last_active_at', 30 * DAY_MS]),
     countProfiles(['gte', 'created_at', DAY_MS]),
     countProfiles(['gte', 'created_at', 30 * DAY_MS]),
     countProfiles(['lte', 'created_at', 30 * DAY_MS]),
-    countProfiles(['lte', 'created_at', 14 * DAY_MS]),
-    countProfiles(['lte', 'created_at', 14 * DAY_MS], ['gte', 'last_active_at', 7 * DAY_MS]),
+    countProfiles(['lte', 'created_at', 30 * DAY_MS], ['gte', 'last_active_at', 7 * DAY_MS]),
   ]);
-  return { total, active1d, active30d, new1d, new30d, total30dAgo, cohortOld, cohortRetained };
+  return { total, active1d, active30d, new1d, new30d, total30dAgo, cohortRetained };
 }
 
 function percent(part, whole) {
@@ -66,13 +65,19 @@ function ValueCard({ label, value, base, highlight }) {
   );
 }
 
-function Row({ name, value, note, applied }) {
+function Row({ name, note, M, m, w }) {
+  const neutral = w === undefined ? false : w === 0;
   return (
-    <tr className="border-t border-slate-100">
+    <tr className="border-t border-slate-100 align-top">
       <td className="py-2 pr-3 font-medium text-slate-800">{name}</td>
-      <td className="py-2 pr-3 tabular-nums text-slate-900">×{num(value)}</td>
+      <td className="py-2 pr-3 tabular-nums text-slate-900">×{num(M)}</td>
       <td className="py-2 text-xs text-slate-500">
-        {applied ? '' : <span className="mr-1 rounded bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">neutro</span>}
+        {neutral && <span className="mr-1 rounded bg-slate-100 px-1.5 py-0.5 font-medium text-slate-600">neutro</span>}
+        {w !== undefined && (
+          <span className="mr-1 text-slate-600">
+            Valor bruto ×{num(m)}, entra al {Math.round(w * 100)} %.
+          </span>
+        )}
         {note}
       </td>
     </tr>
@@ -87,7 +92,6 @@ function Valuation({ s, organicShare }) {
       dau: s.active1d,
       new30d: s.new30d,
       total30dAgo: s.total30dAgo,
-      cohortOld: s.cohortOld,
       cohortRetained: s.cohortRetained,
     },
     organicShare
@@ -115,40 +119,43 @@ function Valuation({ s, organicShare }) {
 
       <div className="mt-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <h3 className="text-sm font-semibold">Cómo se calcula</h3>
+        <p className="mt-2 text-xs text-slate-500">
+          Cada factor entra «a medias» según cuántos datos fiables haya: M = 1 + peso × (valor bruto − 1). Con pocos datos vale ×1 y con
+          datos suficientes pesa entero, sin saltos.
+        </p>
         <p className="mt-2 rounded-md bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700">
-          V = MAU × v × m_ret × m_stick × m_org × m_crec + 0,2 × (Total − MAU)
+          V = MAU × v × M_ret × M_stick × M_org × M_crec + 0,2 × (Total − MAU)
         </p>
         <table className="mt-3 w-full text-left text-sm">
           <tbody>
             <Row
-              name="Retención (m_ret)"
-              value={v.mRet}
-              applied={v.retentionUsed}
+              name="Retención (M_ret)"
+              M={v.MRet}
+              m={v.mRet}
+              w={v.wRet}
               note={
-                v.retentionUsed
-                  ? `${pct(v.retention)} de los usuarios de hace más de 14 días han estado activos esta semana (${s.cohortRetained} de ${s.cohortOld}).`
-                  : `Solo hay ${s.cohortOld} usuarios de hace más de 14 días; hacen falta 30 para que cuente.`
+                v.retention === null
+                  ? 'Todavía no hay usuarios de hace 30 días o más.'
+                  : `${pct(v.retention)} de los ${s.total30dAgo} usuarios de hace 30 días o más han estado activos esta semana. Pesa 0 con 30 usuarios o menos y entero con 100 o más.`
               }
             />
             <Row
-              name="Enganche (m_stick)"
-              value={v.mStick}
-              applied={v.stickinessUsed}
-              note={
-                v.stickinessUsed
-                  ? `DAU/MAU = ${pct(v.stickiness)} (${s.active1d} activos hoy entre ${s.active30d} del mes).`
-                  : `Los nuevos del mes son el ${pct(s.total ? s.new30d / s.total : 0)} del total; no cuenta hasta que sean menos del 50 %.`
-              }
+              name="Enganche (M_stick)"
+              M={v.MStick}
+              m={v.mStick}
+              w={v.wStick}
+              note={`DAU/MAU = ${v.stickiness === null ? '—' : pct(v.stickiness)}. Los nuevos del mes son el ${pct(s.total ? s.new30d / s.total : 0)} del total; pesa 0 si son el 50 % o más y entero si son el 20 % o menos.`}
             />
-            <Row name="Origen (m_org)" value={v.mOrg} applied note={`${pct(v.organicShare)} de usuarios orgánicos (lo pones tú, abajo).`} />
+            <Row name="Origen (M_org)" M={v.MOrg} note={`${pct(v.organicShare)} de usuarios orgánicos (lo pones tú, abajo). Sin peso.`} />
             <Row
-              name="Crecimiento (m_crec)"
-              value={v.mGrowth}
-              applied={v.growthUsed}
+              name="Crecimiento (M_crec)"
+              M={v.MGrowth}
+              m={v.mGrowth}
+              w={v.wGrowth}
               note={
                 v.growth === null
                   ? 'No había usuarios hace 30 días, no se puede medir.'
-                  : `${v.growth >= 0 ? '+' : ''}${pct(v.growth)} de usuarios totales en 30 días (${s.total30dAgo} → ${s.total}). Da ×1,3 si supera el 15 % y hay al menos 100 usuarios.`
+                  : `${v.growth >= 0 ? '+' : ''}${pct(v.growth)} de usuarios totales en 30 días (${s.total30dAgo} → ${s.total}). Pesa 0 con 50 usuarios o menos hace 30 días y entero con 100 o más.`
               }
             />
           </tbody>
