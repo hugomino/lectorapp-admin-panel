@@ -6,6 +6,7 @@ require('dotenv').config();
 const { chromium } = require('playwright');
 const { createClient } = require('@supabase/supabase-js');
 const { toHighResCover } = require('./coverUrl');
+const { readProductPage } = require('./productPage');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -124,6 +125,28 @@ async function enrichBook(page, book) {
   return { updated: true, affiliateUrl };
 }
 
+// Libros con enlace pegado a mano por el admin (porque el ISBN estaba mal o Amazon no lo encontraba):
+// en vez de buscar por ISBN se abre ese enlace y se lee de su ficha. El enlace de afiliado no se toca.
+async function enrichBookFromLink(page, book) {
+  const result = await readProductPage(page, book.affiliate_url);
+  if (result.error) {
+    // No permanente: el admin puede corregir el enlace, o el captcha puede ser puntual.
+    return { failed: true, permanent: false, reason: result.error };
+  }
+
+  const { error } = await supabase
+    .from('books')
+    .update({
+      amazon_cover_url: result.coverUrl || null,
+      amazon_title: result.title,
+      amazon_author: result.author || null,
+    })
+    .eq('id', book.id);
+  if (error) return { failed: true, permanent: false, reason: `error de Supabase: ${error.message}` };
+
+  return { updated: true, affiliateUrl: book.affiliate_url };
+}
+
 async function markLookupFailed(bookId) {
   const { error } = await supabase.from('books').update({ amazon_lookup_failed: true }).eq('id', bookId);
   if (error) console.error(`No se pudo marcar amazon_lookup_failed en #${bookId}:`, error.message);
@@ -204,7 +227,31 @@ async function main() {
       return;
     }
 
+    // Pendientes de verificar con enlace manual y sin datos de Amazon todavía (amazon_lookup_failed = true
+    // los deja fuera de la búsqueda por ISBN de arriba, y el panel los oculta de Verificación hasta aquí).
+    const { data: linkBooks, error: linkError } = await supabase
+      .from('books')
+      .select('id, title, affiliate_url')
+      .eq('amazon_lookup_failed', true)
+      .not('affiliate_url', 'is', null)
+      .is('amazon_title', null)
+      .is('confirmed', null)
+      .order('id', { ascending: true });
+
+    if (linkError) {
+      console.error('No se pudo leer books con enlace manual:', linkError.message);
+      process.exitCode = 1;
+      return;
+    }
+
+    console.log(`${linkBooks.length} libros con enlace manual por leer.`);
     console.log(`${books.length} libros sin affiliate_url o sin título/autor de Amazon.`);
+
+    // Primero los de enlace manual (el admin está esperando a poder verificarlos).
+    const tasks = [
+      ...linkBooks.map((book) => ({ book, mode: 'link' })),
+      ...books.map((book) => ({ book, mode: 'isbn' })),
+    ];
 
     const browser = await chromium.launch({ headless: true });
     const context = await browser.newContext({
@@ -218,12 +265,12 @@ async function main() {
 
     let skippedCount = 0;
 
-    for (let i = 0; i < books.length; i++) {
-      const book = books[i];
-      const label = `#${book.id} "${book.title}"`;
+    for (let i = 0; i < tasks.length; i++) {
+      const { book, mode } = tasks[i];
+      const label = `#${book.id} "${book.title}"${mode === 'link' ? ' (enlace manual)' : ''}`;
 
       try {
-        const outcome = await enrichBook(page, book);
+        const outcome = mode === 'link' ? await enrichBookFromLink(page, book) : await enrichBook(page, book);
         if (outcome.skipped) {
           skippedCount++;
           const suffix = outcome.permanent ? ', pasa a manual' : '';
@@ -245,7 +292,7 @@ async function main() {
         console.log(`x ${label}: excepción, se reintentará (${err.message})`);
       }
 
-      if (i < books.length - 1) {
+      if (i < tasks.length - 1) {
         await sleep(randomDelayMs());
       }
     }

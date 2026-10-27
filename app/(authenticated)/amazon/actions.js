@@ -1,7 +1,9 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { saveManualAmazonLink } from '@/lib/amazonLink';
 import { STALE_RUNNING_MS } from './stale';
 
 export async function requestEnrichRun() {
@@ -24,14 +26,13 @@ export async function requestEnrichRun() {
   revalidatePath('/amazon');
 }
 
+// Enlace de Amazon pegado a mano. Deja el libro esperando al proceso, que leerá el enlace en vez de buscar por ISBN.
 export async function saveManualAffiliateLink(formData) {
   const bookId = Number(formData.get('bookId'));
-  const url = formData.get('affiliateUrl')?.toString().trim();
-  if (!url) return; // nada que guardar, el campo estaba vacío
-
-  const supabase = supabaseAdmin();
-  const { error } = await supabase.from('books').update({ affiliate_url: url }).eq('id', bookId);
-  if (error) throw new Error(error.message);
+  const result = await saveManualAmazonLink(bookId, formData.get('affiliateUrl'));
+  if (result.error) redirect(`/amazon?${new URLSearchParams({ error: result.error })}`);
 
   revalidatePath('/amazon');
+  revalidatePath('/');
+  redirect('/amazon?linked=1');
 }

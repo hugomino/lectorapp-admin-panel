@@ -1,7 +1,9 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
+import { saveManualAmazonLink } from '@/lib/amazonLink';
 
 function adminUserId() {
   return process.env.ADMIN_USER_ID || null;
@@ -52,6 +54,18 @@ export async function verifyBook(formData) {
   if (logError) throw new Error(logError.message);
 
   revalidatePath('/');
+}
+
+// El ISBN del libro está mal y Amazon trae otro libro: el admin busca el correcto y pega su enlace de afiliado.
+// El libro sale de Verificación hasta que el proceso (pestaña Amazon) lea el enlace y traiga sus datos.
+export async function correctAmazonLink(formData) {
+  const bookId = Number(formData.get('bookId'));
+  const result = await saveManualAmazonLink(bookId, formData.get('affiliateUrl'));
+  if (result.error) redirect(`/?${new URLSearchParams({ error: result.error })}`);
+
+  revalidatePath('/');
+  revalidatePath('/amazon');
+  redirect('/?linked=1');
 }
 
 export async function rejectBook(formData) {

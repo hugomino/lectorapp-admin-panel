@@ -29,15 +29,87 @@ async function getFailedBooks() {
   return data;
 }
 
+// Libros con enlace pegado a mano que aún no tienen datos de Amazon: esperan a que el proceso lea su enlace.
+async function getWaitingBooks() {
+  const supabase = supabaseAdmin();
+  const { data, error } = await supabase
+    .from('books')
+    .select('id, title, author, isbn, isbn13, cover_url, affiliate_url')
+    .eq('amazon_lookup_failed', true)
+    .not('affiliate_url', 'is', null)
+    .is('amazon_title', null)
+    .is('confirmed', null)
+    .order('id', { ascending: true });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
 function formatDate(value) {
   if (!value) return '—';
   return new Date(value).toLocaleString('es-ES');
 }
 
-export default async function AmazonPage() {
-  const [status, failedBooks] = await Promise.all([getStatus(), getFailedBooks()]);
+function Banner({ params }) {
+  if (params.error) {
+    return <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-900">{params.error}</p>;
+  }
+  if (params.linked) {
+    return (
+      <p className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-sm text-green-900">
+        Enlace guardado. Lanza el proceso para que lo lea y traiga la portada y los datos del libro.
+      </p>
+    );
+  }
+  return null;
+}
+
+function BookCard({ book, linkValue, note }) {
+  return (
+    <li className="flex gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      {book.cover_url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={book.cover_url} alt="" className="h-24 w-16 flex-none rounded-md object-cover" />
+      ) : (
+        <div className="flex h-24 w-16 flex-none items-center justify-center rounded-md bg-slate-100 text-[10px] text-slate-400">
+          Sin portada
+        </div>
+      )}
+
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-medium text-slate-900">{book.title}</p>
+        <p className="truncate text-sm text-slate-600">{book.author}</p>
+        <p className="mt-0.5 text-xs text-slate-500">ISBN: {book.isbn13 || book.isbn || '—'}</p>
+        {note}
+
+        <form action={saveManualAffiliateLink} className="mt-2 flex gap-2">
+          <input type="hidden" name="bookId" value={book.id} />
+          <input
+            type="text"
+            name="affiliateUrl"
+            defaultValue={linkValue}
+            placeholder="https://www.amazon.es/dp/XXXXXXXXXX?tag=hugomino0a-21"
+            className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+          />
+          <button
+            type="submit"
+            className="flex-none rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
+          >
+            Guardar
+          </button>
+        </form>
+      </div>
+    </li>
+  );
+}
+
+export default async function AmazonPage({ searchParams }) {
+  const params = await searchParams;
+  const [status, failedBooks, waitingBooks] = await Promise.all([getStatus(), getFailedBooks(), getWaitingBooks()]);
   const stale = isRunningStale(status);
   const canTrigger = status.status === 'idle' || stale;
+  const failureByBook = Object.fromEntries(
+    (Array.isArray(status.failure_details) ? status.failure_details : []).map((f) => [f.book_id, f.reason])
+  );
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
@@ -45,13 +117,16 @@ export default async function AmazonPage() {
         <div>
           <h1 className="text-xl font-semibold">Enriquecimiento de Amazon</h1>
           <p className="text-sm text-slate-500">
-            Busca affiliate_url y amazon_cover_url para los libros que aún no los tienen.
+            Busca por ISBN el enlace y la portada de los libros que aún no los tienen, y lee la ficha de los libros a los
+            que has pegado un enlace a mano.
           </p>
         </div>
         <a href="/amazon" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100">
           Actualizar
         </a>
       </div>
+
+      <Banner params={params} />
 
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex items-center justify-between">
@@ -125,38 +200,39 @@ export default async function AmazonPage() {
         ) : (
           <ul className="mt-4 space-y-3">
             {failedBooks.map((book) => (
-              <li key={book.id} className="flex gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                {book.cover_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={book.cover_url} alt="" className="h-24 w-16 flex-none rounded-md object-cover" />
-                ) : (
-                  <div className="flex h-24 w-16 flex-none items-center justify-center rounded-md bg-slate-100 text-[10px] text-slate-400">
-                    Sin portada
-                  </div>
-                )}
+              <BookCard key={book.id} book={book} />
+            ))}
+          </ul>
+        )}
+      </div>
 
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium text-slate-900">{book.title}</p>
-                  <p className="truncate text-sm text-slate-600">{book.author}</p>
-                  <p className="mt-0.5 text-xs text-slate-500">ISBN: {book.isbn13 || book.isbn || '—'}</p>
+      <div className="mt-10">
+        <h2 className="text-lg font-semibold">Con enlace guardado, esperando al proceso ({waitingBooks.length})</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Libros a los que has pegado tu enlace (porque Amazon no los encontraba o traía otro libro por un ISBN
+          equivocado). Al lanzar el proceso se lee la ficha de tu enlace —portada en alta calidad, título y autor— y el
+          libro vuelve a Verificación para que lo compares. Si el enlace falla, el motivo aparece aquí y puedes corregirlo.
+        </p>
 
-                  <form action={saveManualAffiliateLink} className="mt-2 flex gap-2">
-                    <input type="hidden" name="bookId" value={book.id} />
-                    <input
-                      type="text"
-                      name="affiliateUrl"
-                      placeholder="https://www.amazon.es/dp/XXXXXXXXXX?tag=hugomino0a-21"
-                      className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
-                    />
-                    <button
-                      type="submit"
-                      className="flex-none rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
-                    >
-                      Guardar
-                    </button>
-                  </form>
-                </div>
-              </li>
+        {waitingBooks.length === 0 ? (
+          <p className="mt-4 rounded-lg border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
+            No hay ningún libro esperando.
+          </p>
+        ) : (
+          <ul className="mt-4 space-y-3">
+            {waitingBooks.map((book) => (
+              <BookCard
+                key={book.id}
+                book={book}
+                linkValue={book.affiliate_url}
+                note={
+                  failureByBook[book.id] ? (
+                    <p className="mt-1 text-xs text-red-600">Último intento: {failureByBook[book.id]}</p>
+                  ) : (
+                    <p className="mt-1 text-xs text-slate-500">Pendiente de lanzar el proceso.</p>
+                  )
+                }
+              />
             ))}
           </ul>
         )}
