@@ -79,6 +79,14 @@ function BookCard({ book, linkValue, note }) {
         <p className="truncate font-medium text-slate-900">{book.title}</p>
         <p className="truncate text-sm text-slate-600">{book.author}</p>
         <p className="mt-0.5 text-xs text-slate-500">ISBN: {book.isbn13 || book.isbn || '—'}</p>
+        <a
+          href={`https://www.amazon.es/s?k=${encodeURIComponent(`${book.title} ${book.author || ''}`.trim())}`}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-0.5 inline-block text-xs text-blue-600 underline"
+        >
+          Buscar en Amazon.es
+        </a>
         {note}
 
         <form action={saveManualAffiliateLink} className="mt-2 flex gap-2">

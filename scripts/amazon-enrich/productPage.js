@@ -58,15 +58,27 @@ async function hasCaptcha(page) {
 
 // Devuelve { title, author, coverUrl } o { error } si no es una ficha de producto legible.
 async function readProductPage(page, url) {
-  // El captcha de Amazon es intermitente: se espera un poco más en cada reintento antes de rendirse.
+  // El captcha de Amazon y los cortes de red de la primera petición (p. ej. net::ERR_ABORTED en enlaces
+  // cortos) son intermitentes: se espera un poco más en cada reintento antes de rendirse.
   let blocked = true;
+  let navigationError = null;
   for (let attempt = 1; attempt <= CAPTCHA_ATTEMPTS && blocked; attempt++) {
     if (attempt > 1) await sleep(8000 * (attempt - 1));
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    blocked = await hasCaptcha(page);
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      navigationError = null;
+      blocked = await hasCaptcha(page);
+    } catch (error) {
+      navigationError = error.message.split('\n')[0];
+      blocked = true;
+    }
   }
   if (blocked) {
-    return { error: 'Amazon pidió un captcha varias veces seguidas; se reintentará en la siguiente ejecución' };
+    return {
+      error: navigationError
+        ? `no se pudo abrir el enlace (${navigationError}); se reintentará en la siguiente ejecución`
+        : 'Amazon pidió un captcha varias veces seguidas; se reintentará en la siguiente ejecución',
+    };
   }
 
   // La ficha tarda un poco en pintar el título tras cargar.

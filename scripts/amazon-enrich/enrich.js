@@ -84,6 +84,36 @@ async function findFirstOrganicResult(page) {
   return null;
 }
 
+const SEARCH_ATTEMPTS = 3;
+const CARDS = 'div[data-component-type="s-search-result"]';
+const NO_RESULTS = ':text-matches("No hay resultados|no ha coincidido", "i")';
+
+// Amazon a veces devuelve su página de error ("Lo sentimos.") o un captcha, sobre todo en las primeras
+// peticiones de una sesión nueva. Eso NO significa que el libro no exista, así que solo se da por
+// "no encontrado" con prueba positiva (mensaje de sin resultados, o tarjetas que son todas patrocinadas)
+// y, si Amazon falla, se reintenta con esperas antes de rendirse.
+// Devuelve { result } | { empty: true } | { blocked: true }.
+async function searchByIsbn(page, isbn) {
+  for (let attempt = 1; attempt <= SEARCH_ATTEMPTS; attempt++) {
+    if (attempt > 1) await sleep(8000 * (attempt - 1));
+
+    await page.goto(`https://www.amazon.es/s?k=${encodeURIComponent(isbn)}`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 20000,
+    });
+    await dismissCookieBanner(page);
+    await page.locator(`${CARDS}, ${NO_RESULTS}`).first().waitFor({ timeout: 8000 }).catch(() => null);
+
+    const result = await findFirstOrganicResult(page);
+    if (result && result.asin) return { result };
+
+    if ((await page.locator(CARDS).count()) > 0) return { empty: true }; // solo patrocinados
+    if ((await page.locator(NO_RESULTS).count()) > 0) return { empty: true }; // mensaje explícito
+    // Ni resultados ni "sin resultados": página de error o captcha -> reintentar.
+  }
+  return { blocked: true };
+}
+
 async function enrichBook(page, book) {
   const isbn = book.isbn13 || book.isbn;
   if (!isbn) {
@@ -91,18 +121,18 @@ async function enrichBook(page, book) {
     return { skipped: true, permanent: true, reason: 'sin ISBN' };
   }
 
-  await page.goto(`https://www.amazon.es/s?k=${encodeURIComponent(isbn)}`, {
-    waitUntil: 'domcontentloaded',
-    timeout: 20000,
-  });
-  await dismissCookieBanner(page);
+  const search = await searchByIsbn(page, isbn);
 
-  const result = await findFirstOrganicResult(page);
-  if (!result || !result.asin) {
-    // Permanente: Amazon no tiene ese ISBN (o solo hay patrocinados) — no va
-    // a cambiar de un run a otro, mejor pedir el link a mano.
-    return { failed: true, permanent: true, reason: 'sin resultado no patrocinado con ASIN' };
+  if (search.blocked) {
+    // No permanente: el libro puede existir; Amazon no respondió bien. Se reintenta en el siguiente run.
+    return { failed: true, permanent: false, reason: 'Amazon no respondió bien (página de error o captcha)' };
   }
+  if (search.empty) {
+    // Permanente: Amazon tiene la búsqueda vacía para ese ISBN — no va a cambiar de un run a otro,
+    // mejor pedir el link a mano.
+    return { failed: true, permanent: true, reason: 'Amazon no tiene ese ISBN (sin resultados)' };
+  }
+  const { result } = search;
 
   const affiliateUrl = `https://www.amazon.es/dp/${result.asin}?tag=${AFFILIATE_TAG}`;
 
@@ -262,6 +292,15 @@ async function main() {
       viewport: { width: 1280, height: 800 },
     });
     const page = await context.newPage();
+
+    // Calentamiento: las primeras peticiones de una sesión nueva son las que Amazon más bloquea.
+    // Se entra primero en la portada y se aceptan las cookies, como haría una persona.
+    try {
+      await page.goto('https://www.amazon.es/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await dismissCookieBanner(page);
+    } catch {
+      // Si falla el calentamiento no pasa nada: los reintentos de cada búsqueda lo cubren.
+    }
 
     let skippedCount = 0;
 
