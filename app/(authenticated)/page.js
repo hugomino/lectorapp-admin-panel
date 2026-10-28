@@ -9,7 +9,7 @@ async function getPendingBooks() {
   const { data, error } = await supabase
     .from('books')
     .select(
-      'id, title, author, isbn, isbn13, pages, cover_url, amazon_cover_url, amazon_title, amazon_author, synopsis, affiliate_url, manual_entry'
+      'id, title, author, isbn, isbn13, pages, cover_url, amazon_cover_url, amazon_title, amazon_author, amazon_isbn, synopsis, affiliate_url, manual_entry'
     )
     .is('confirmed', null)
     // Los que Amazon no encontró (o que esperan a que se lea su enlace manual) no salen aquí: viven en la

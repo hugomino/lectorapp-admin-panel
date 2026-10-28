@@ -143,6 +143,7 @@ async function enrichBook(page, book) {
       amazon_cover_url: result.coverUrl || null,
       amazon_title: result.title || null,
       amazon_author: result.author || null,
+      amazon_isbn: result.isbn || null,
     })
     .eq('id', book.id);
 
@@ -257,15 +258,15 @@ async function main() {
       return;
     }
 
-    // Pendientes de verificar con enlace manual y sin datos de Amazon todavía (amazon_lookup_failed = true
-    // los deja fuera de la búsqueda por ISBN de arriba, y el panel los oculta de Verificación hasta aquí).
+    // Libros con enlace manual y sin datos de Amazon todavía (amazon_lookup_failed = true los deja fuera de la
+    // búsqueda por ISBN de arriba). Si están pendientes, el panel los oculta de Verificación hasta aquí; si ya
+    // estaban verificados, se les lee la ficha para que el admin pueda elegir su portada en la pestaña Amazon.
     const { data: linkBooks, error: linkError } = await supabase
       .from('books')
       .select('id, title, affiliate_url')
       .eq('amazon_lookup_failed', true)
       .not('affiliate_url', 'is', null)
       .is('amazon_title', null)
-      .is('confirmed', null)
       .order('id', { ascending: true });
 
     if (linkError) {

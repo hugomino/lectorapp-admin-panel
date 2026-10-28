@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
-import { requestEnrichRun, saveManualAffiliateLink } from './actions';
+import IsbnCheck from '@/components/IsbnCheck';
+import { requestEnrichRun, saveManualAffiliateLink, chooseCover } from './actions';
 import { isRunningStale } from './stale';
 
 export const dynamic = 'force-dynamic';
@@ -30,18 +31,45 @@ async function getFailedBooks() {
 }
 
 // Libros con enlace pegado a mano que aún no tienen datos de Amazon: esperan a que el proceso lea su enlace.
+// Incluye los ya verificados: no vuelven a Verificación, pero tienen que seguir visibles hasta que se lea el enlace.
 async function getWaitingBooks() {
   const supabase = supabaseAdmin();
   const { data, error } = await supabase
     .from('books')
-    .select('id, title, author, isbn, isbn13, cover_url, affiliate_url')
+    .select('id, title, author, isbn, isbn13, cover_url, affiliate_url, confirmed')
     .eq('amazon_lookup_failed', true)
     .not('affiliate_url', 'is', null)
     .is('amazon_title', null)
-    .is('confirmed', null)
     .order('id', { ascending: true });
   if (error) throw new Error(error.message);
   return data;
+}
+
+// Libros YA verificados cuyo enlace manual ya se ha leído: el admin decide si se queda la portada actual o la de Amazon.
+// amazon_lookup_failed = true es la señal de "decisión pendiente"; al elegir (o al verificar) vuelve a false.
+async function getCoverChoiceBooks() {
+  const supabase = supabaseAdmin();
+  const { data, error } = await supabase
+    .from('books')
+    .select('id, title, author, isbn, isbn13, cover_url, amazon_title, amazon_author, amazon_cover_url, amazon_isbn')
+    .eq('confirmed', true)
+    .eq('amazon_lookup_failed', true)
+    .not('amazon_title', 'is', null)
+    .order('id', { ascending: true });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+function normalize(value) {
+  return (value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function coverOrigin(url) {
+  if (!url) return null;
+  if (url.includes('openlibrary.org')) return 'Open Library';
+  if (url.includes('/storage/v1/object/public/book-covers/')) return 'Subida por el usuario';
+  if (url.includes('media-amazon.com')) return 'Amazon';
+  return 'Otra fuente';
 }
 
 function formatDate(value) {
@@ -53,14 +81,99 @@ function Banner({ params }) {
   if (params.error) {
     return <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-900">{params.error}</p>;
   }
+  const ok = 'mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-sm text-green-900';
   if (params.linked) {
+    return <p className={ok}>Enlace guardado. Lanza el proceso para que lo lea y traiga la portada y los datos del libro.</p>;
+  }
+  if (params.linkedVerified) {
     return (
-      <p className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-sm text-green-900">
-        Enlace guardado. Lanza el proceso para que lo lea y traiga la portada y los datos del libro.
+      <p className={ok}>
+        Enlace guardado. «{params.linkedVerified}» ya estaba verificado, así que no pasa por Verificación. Lanza el
+        proceso y, cuando lea el enlace, podrás elegir su portada (la actual o la de Amazon) en el bloque «Elegir
+        portada» de más abajo.
+      </p>
+    );
+  }
+  if (params.covered) {
+    return (
+      <p className={ok}>
+        {params.covered === 'amazon'
+          ? `Portada de Amazon aplicada a «${params.coveredTitle}».`
+          : `Se mantiene la portada actual de «${params.coveredTitle}».`}
       </p>
     );
   }
   return null;
+}
+
+function CoverChoiceCard({ book }) {
+  const titleMismatch = normalize(book.title) !== normalize(book.amazon_title);
+  const authorMismatch = Boolean(book.amazon_author) && normalize(book.author) !== normalize(book.amazon_author);
+  const origin = coverOrigin(book.cover_url);
+
+  return (
+    <li className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <form action={chooseCover} className="flex gap-4">
+        <input type="hidden" name="bookId" value={book.id} />
+
+        <div className="flex flex-none gap-2">
+          <figure className="flex flex-col items-center gap-1">
+            {book.cover_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={book.cover_url} alt="" className="h-32 w-24 rounded-md object-cover" />
+            ) : (
+              <div className="flex h-32 w-24 items-center justify-center rounded-md bg-slate-100 text-xs text-slate-400">
+                Sin portada
+              </div>
+            )}
+            <figcaption className="text-[10px] text-slate-500">Actual{origin ? ` · ${origin}` : ''}</figcaption>
+          </figure>
+          <figure className="flex flex-col items-center gap-1">
+            {book.amazon_cover_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={book.amazon_cover_url} alt="" className="h-32 w-24 rounded-md object-cover" />
+            ) : (
+              <div className="flex h-32 w-24 items-center justify-center rounded-md bg-slate-100 text-xs text-slate-400">
+                Sin portada
+              </div>
+            )}
+            <figcaption className="text-[10px] text-slate-500">Amazon</figcaption>
+          </figure>
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p className="font-medium text-slate-900">{book.title}</p>
+          <p className="text-sm text-slate-600">{book.author}</p>
+          <p className={`mt-1 text-xs ${titleMismatch || authorMismatch ? 'text-red-600' : 'text-slate-500'}`}>
+            Amazon: {book.amazon_title}
+            {book.amazon_author ? ` — ${book.amazon_author}` : ''}
+          </p>
+
+          <IsbnCheck book={book} />
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="submit"
+              name="choice"
+              value="amazon"
+              disabled={!book.amazon_cover_url}
+              className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              Usar la de Amazon
+            </button>
+            <button
+              type="submit"
+              name="choice"
+              value="current"
+              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            >
+              Mantener la actual
+            </button>
+          </div>
+        </div>
+      </form>
+    </li>
+  );
 }
 
 function BookCard({ book, linkValue, note }) {
@@ -112,7 +225,12 @@ function BookCard({ book, linkValue, note }) {
 
 export default async function AmazonPage({ searchParams }) {
   const params = await searchParams;
-  const [status, failedBooks, waitingBooks] = await Promise.all([getStatus(), getFailedBooks(), getWaitingBooks()]);
+  const [status, failedBooks, waitingBooks, coverChoiceBooks] = await Promise.all([
+    getStatus(),
+    getFailedBooks(),
+    getWaitingBooks(),
+    getCoverChoiceBooks(),
+  ]);
   const stale = isRunningStale(status);
   const canTrigger = status.status === 'idle' || stale;
   const failureByBook = Object.fromEntries(
@@ -214,12 +332,28 @@ export default async function AmazonPage({ searchParams }) {
         )}
       </div>
 
+      {coverChoiceBooks.length > 0 && (
+        <div className="mt-10">
+          <h2 className="text-lg font-semibold">Elegir portada ({coverChoiceBooks.length})</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Libros que ya estaban verificados y a los que has puesto tu enlace de Amazon. Elige si se queda la portada que
+            tienen o la de Amazon en alta calidad. El título y el autor de Amazon salen en rojo si no coinciden.
+          </p>
+          <ul className="mt-4 space-y-3">
+            {coverChoiceBooks.map((book) => (
+              <CoverChoiceCard key={book.id} book={book} />
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="mt-10">
         <h2 className="text-lg font-semibold">Con enlace guardado, esperando al proceso ({waitingBooks.length})</h2>
         <p className="mt-1 text-sm text-slate-500">
           Libros a los que has pegado tu enlace (porque Amazon no los encontraba o traía otro libro por un ISBN
-          equivocado). Al lanzar el proceso se lee la ficha de tu enlace —portada en alta calidad, título y autor— y el
-          libro vuelve a Verificación para que lo compares. Si el enlace falla, el motivo aparece aquí y puedes corregirlo.
+          equivocado). Al lanzar el proceso se lee la ficha de tu enlace —portada en alta calidad, título y autor—. Los
+          pendientes vuelven a Verificación para que los compares; los que ya estaban verificados pasan al bloque «Elegir
+          portada». Si el enlace falla, el motivo aparece aquí y puedes corregirlo.
         </p>
 
         {waitingBooks.length === 0 ? (
@@ -234,11 +368,18 @@ export default async function AmazonPage({ searchParams }) {
                 book={book}
                 linkValue={book.affiliate_url}
                 note={
-                  failureByBook[book.id] ? (
-                    <p className="mt-1 text-xs text-red-600">Último intento: {failureByBook[book.id]}</p>
-                  ) : (
-                    <p className="mt-1 text-xs text-slate-500">Pendiente de lanzar el proceso.</p>
-                  )
+                  <>
+                    {book.confirmed === true && (
+                      <p className="mt-1 text-xs font-medium text-emerald-700">
+                        Ya verificado: el proceso solo traerá la portada de Amazon para que elijas.
+                      </p>
+                    )}
+                    {failureByBook[book.id] ? (
+                      <p className="mt-1 text-xs text-red-600">Último intento: {failureByBook[book.id]}</p>
+                    ) : (
+                      <p className="mt-1 text-xs text-slate-500">Pendiente de lanzar el proceso.</p>
+                    )}
+                  </>
                 }
               />
             ))}

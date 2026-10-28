@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import IsbnCheck from '@/components/IsbnCheck';
 
 function normalize(value) {
   return (value || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -86,6 +87,8 @@ export default function VerifyBookForm({ book, verifyBook }) {
           }`}
         />
         {authorMismatch && <p className="mt-0.5 text-xs text-red-600">Amazon: {book.amazon_author}</p>}
+
+        <IsbnCheck book={book} />
 
         <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500">
           <div>

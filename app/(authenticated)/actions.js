@@ -16,7 +16,7 @@ export async function verifyBook(formData) {
 
   const { data: book, error: fetchError } = await supabase
     .from('books')
-    .select('amazon_cover_url')
+    .select('amazon_cover_url, amazon_title')
     .eq('id', bookId)
     .single();
   if (fetchError) throw new Error(fetchError.message);
@@ -38,6 +38,11 @@ export async function verifyBook(formData) {
     updates.cover_source = 'amazon';
   }
 
+  // Un libro que llega aquí con datos de Amazon leídos de un enlace manual tiene amazon_lookup_failed = true.
+  // Al verificarlo (eligiendo portada) la decisión ya está tomada: se limpia para que no aparezca después en el
+  // bloque "Elegir portada" de la pestaña Amazon.
+  if (book?.amazon_title) updates.amazon_lookup_failed = false;
+
   const title = formData.get('title')?.toString().trim();
   const author = formData.get('author')?.toString().trim();
   if (title) updates.title = title;
@@ -54,6 +59,26 @@ export async function verifyBook(formData) {
   if (logError) throw new Error(logError.message);
 
   revalidatePath('/');
+}
+
+// Sustituye el ISBN del libro por el que figura en la ficha de Amazon (books.amazon_isbn). Lo usa el botón de
+// IsbnCheck cuando el admin ve que el ISBN de la base es erróneo; no toca título, autor ni portada.
+export async function applyAmazonIsbn(formData) {
+  const bookId = Number(formData.get('bookId'));
+  const supabase = supabaseAdmin();
+
+  const { data: book, error: fetchError } = await supabase.from('books').select('amazon_isbn').eq('id', bookId).single();
+  if (fetchError) throw new Error(fetchError.message);
+  if (!book?.amazon_isbn) throw new Error('Amazon no ha dado ningún ISBN para este libro.');
+
+  const { error } = await supabase
+    .from('books')
+    .update({ isbn: book.amazon_isbn, isbn13: book.amazon_isbn })
+    .eq('id', bookId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath('/');
+  revalidatePath('/amazon');
 }
 
 // El ISBN del libro está mal y Amazon trae otro libro: el admin busca el correcto y pega su enlace de afiliado.
