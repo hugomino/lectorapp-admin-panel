@@ -16,6 +16,8 @@ export default function VerifyBookForm({ book, verifyBook }) {
 
   const titleMismatch = Boolean(book.amazon_title) && normalize(title) !== normalize(book.amazon_title);
   const authorMismatch = Boolean(book.amazon_author) && normalize(author) !== normalize(book.amazon_author);
+  // Un número de páginas imposible (p. ej. 9.999) pasa desapercibido si va pequeño: se marca en rojo.
+  const pagesSuspicious = book.pages != null && (book.pages < 10 || book.pages > 1500);
 
   return (
     <form action={verifyBook} className="flex gap-4">
@@ -88,16 +90,21 @@ export default function VerifyBookForm({ book, verifyBook }) {
         />
         {authorMismatch && <p className="mt-0.5 text-xs text-red-600">Amazon: {book.amazon_author}</p>}
 
+        <p
+          className={`mt-1 w-full rounded-md border px-2 py-1 text-sm ${
+            pagesSuspicious ? 'border-red-400 bg-red-50 font-medium text-red-700' : 'border-slate-200 text-slate-600'
+          }`}
+        >
+          Páginas: {book.pages ?? '—'}
+        </p>
+        {pagesSuspicious && <p className="mt-0.5 text-xs text-red-600">Número de páginas poco creíble, revísalo.</p>}
+
         <IsbnCheck book={book} />
 
         <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500">
           <div>
             <dt className="inline font-medium">ISBN: </dt>
             <dd className="inline">{book.isbn13 || book.isbn || '—'}</dd>
-          </div>
-          <div>
-            <dt className="inline font-medium">Páginas: </dt>
-            <dd className="inline">{book.pages ?? '—'}</dd>
           </div>
           <div className="col-span-2">
             <dt className="inline font-medium">Alta manual: </dt>
