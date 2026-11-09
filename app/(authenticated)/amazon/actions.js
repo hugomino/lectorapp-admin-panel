@@ -70,3 +70,49 @@ export async function chooseCover(formData) {
   revalidatePath('/amazon');
   redirect(`/amazon?${new URLSearchParams({ covered: choice, coveredTitle: book.title })}`);
 }
+
+// Libro YA verificado que viene de Open Library o no tiene autor: el admin escribe el autor y elige la portada.
+//  - 'amazon':  la portada de Amazon pasa a ser la del libro (igual que al verificar eligiendo Amazon).
+//  - 'current': se mantiene la que tiene.
+// Queda anotado en book_review_log ('cover_reviewed') para que el libro salga de la lista; no se toca `confirmed`.
+export async function reviewBook(formData) {
+  const bookId = Number(formData.get('bookId'));
+  const choice = formData.get('choice')?.toString();
+  const author = formData.get('author')?.toString().trim() || '';
+  const fail = (error) => redirect(`/amazon?${new URLSearchParams({ error })}`);
+  if (choice !== 'amazon' && choice !== 'current') redirect('/amazon');
+
+  const supabase = supabaseAdmin();
+  const { data: book, error: fetchError } = await supabase
+    .from('books')
+    .select('title, author, confirmed, amazon_cover_url')
+    .eq('id', bookId)
+    .single();
+  if (fetchError) fail(fetchError.message);
+  if (book.confirmed !== true) fail('Este libro no está verificado.');
+  if (!author && !book.author?.trim()) fail(`«${book.title}» no tiene autor: escríbelo antes de guardar.`);
+  if (choice === 'amazon' && !book.amazon_cover_url) fail('Este libro no tiene portada de Amazon.');
+
+  const updates = {};
+  if (author && author !== book.author) updates.author = author;
+  if (choice === 'amazon') {
+    updates.cover_url = book.amazon_cover_url;
+    updates.cover_source = 'amazon';
+  }
+
+  if (Object.keys(updates).length > 0) {
+    const { error } = await supabase.from('books').update(updates).eq('id', bookId).eq('confirmed', true);
+    if (error) fail(error.message);
+  }
+
+  const { error: logError } = await supabase.from('book_review_log').insert({
+    book_id: bookId,
+    event_type: 'cover_reviewed',
+    notes: choice === 'amazon' ? 'portada de Amazon' : 'portada actual',
+    processed_by: process.env.ADMIN_USER_ID || null,
+  });
+  if (logError) fail(logError.message);
+
+  revalidatePath('/amazon');
+  redirect(`/amazon?${new URLSearchParams({ reviewed: book.title })}`);
+}
