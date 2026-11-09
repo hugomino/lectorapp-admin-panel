@@ -16,7 +16,7 @@ export async function verifyBook(formData) {
 
   const { data: book, error: fetchError } = await supabase
     .from('books')
-    .select('amazon_cover_url, amazon_title')
+    .select('cover_url, amazon_cover_url, amazon_title')
     .eq('id', bookId)
     .single();
   if (fetchError) throw new Error(fetchError.message);
@@ -37,6 +37,9 @@ export async function verifyBook(formData) {
     updates.cover_url = book.amazon_cover_url;
     updates.cover_source = 'amazon';
   }
+
+  // Al verificar ya has visto la portada y has elegido: queda confirmada y no vuelve a la pestaña Portadas.
+  if (updates.cover_url || book?.cover_url) updates.cover_confirmed_at = updates.confirmed_at;
 
   // Un libro que llega aquí con datos de Amazon leídos de un enlace manual tiene amazon_lookup_failed = true.
   // Al verificarlo (eligiendo portada) la decisión ya está tomada: se limpia para que no aparezca después en el

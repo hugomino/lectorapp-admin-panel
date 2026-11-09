@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import IsbnCheck from '@/components/IsbnCheck';
-import { requestEnrichRun, saveManualAffiliateLink, chooseCover, reviewBook } from './actions';
+import { coverOrigin } from '@/lib/coverOrigin';
+import { requestEnrichRun, saveManualAffiliateLink, chooseCover } from './actions';
 import { isRunningStale } from './stale';
 
 export const dynamic = 'force-dynamic';
@@ -60,48 +61,8 @@ async function getCoverChoiceBooks() {
   return data;
 }
 
-// Libros YA verificados que vienen de Open Library (portada por elegir y autor por revisar) o que no tienen autor.
-// Los de Open Library salen de la lista cuando se revisan (book_review_log 'cover_reviewed') o al pasar a portada de Amazon;
-// los que no tienen autor siguen saliendo hasta que se les escribe uno.
-async function getReviewBooks(skipIds) {
-  const supabase = supabaseAdmin();
-  const columns =
-    'id, title, author, isbn, isbn13, cover_url, cover_source, amazon_title, amazon_author, amazon_cover_url, amazon_isbn';
-  const verified = () => supabase.from('books').select(columns).eq('confirmed', true);
-  const [fromOpenLibrary, noAuthorNull, noAuthorEmpty, reviewed] = await Promise.all([
-    verified().eq('cover_source', 'open_library'),
-    verified().is('author', null),
-    verified().eq('author', ''),
-    supabase.from('book_review_log').select('book_id').eq('event_type', 'cover_reviewed'),
-  ]);
-  for (const r of [fromOpenLibrary, noAuthorNull, noAuthorEmpty, reviewed]) {
-    if (r.error) throw new Error(r.error.message);
-  }
-
-  const done = new Set(reviewed.data.map((r) => r.book_id));
-  const hasAuthor = (b) => Boolean(b.author?.trim());
-  const byId = new Map();
-  for (const b of [...fromOpenLibrary.data, ...noAuthorNull.data, ...noAuthorEmpty.data]) byId.set(b.id, b);
-  return [...byId.values()]
-    .filter((b) => !skipIds.has(b.id) && (!hasAuthor(b) || (b.cover_source === 'open_library' && !done.has(b.id))))
-    .sort((a, b) => a.id - b.id);
-}
-
 function normalize(value) {
   return (value || '').trim().toLowerCase().replace(/\s+/g, ' ');
-}
-
-function coverOrigin(book) {
-  const url = book.cover_url;
-  if (!url) return null;
-  // cover_source manda: las portadas de Open Library se guardan re-alojadas en Supabase Storage.
-  if (book.cover_source === 'open_library') return 'Open Library';
-  if (book.cover_source === 'amazon') return 'Amazon';
-  if (book.cover_source === 'user_upload') return 'Subida por el usuario';
-  if (url.includes('openlibrary.org')) return 'Open Library';
-  if (url.includes('/storage/v1/object/public/book-covers/')) return 'Subida por el usuario';
-  if (url.includes('media-amazon.com')) return 'Amazon';
-  return 'Otra fuente';
 }
 
 function formatDate(value) {
@@ -125,9 +86,6 @@ function Banner({ params }) {
         portada» de más abajo.
       </p>
     );
-  }
-  if (params.reviewed) {
-    return <p className={ok}>«{params.reviewed}» guardado.</p>;
   }
   if (params.covered) {
     return (
@@ -211,89 +169,6 @@ function CoverChoiceCard({ book }) {
   );
 }
 
-function ReviewCard({ book }) {
-  const noAuthor = !book.author?.trim();
-  const origin = coverOrigin(book);
-  const hasAmazonCover = Boolean(book.amazon_cover_url);
-  const authorMismatch = Boolean(book.amazon_author) && normalize(book.author) !== normalize(book.amazon_author);
-
-  return (
-    <li className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <form action={reviewBook} className="flex gap-4">
-        <input type="hidden" name="bookId" value={book.id} />
-
-        <div className="flex flex-none gap-2">
-          <figure className="flex flex-col items-center gap-1">
-            {book.cover_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={book.cover_url} alt="" className="h-32 w-24 rounded-md object-cover" />
-            ) : (
-              <div className="flex h-32 w-24 items-center justify-center rounded-md bg-slate-100 text-xs text-slate-400">
-                Sin portada
-              </div>
-            )}
-            <figcaption className="text-[10px] text-slate-500">Actual{origin ? ` · ${origin}` : ''}</figcaption>
-          </figure>
-          <figure className="flex flex-col items-center gap-1">
-            {hasAmazonCover ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={book.amazon_cover_url} alt="" className="h-32 w-24 rounded-md object-cover" />
-            ) : (
-              <div className="flex h-32 w-24 items-center justify-center rounded-md bg-slate-100 text-center text-xs text-slate-400">
-                Sin Amazon
-              </div>
-            )}
-            <figcaption className="text-[10px] text-slate-500">Amazon</figcaption>
-          </figure>
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <p className="font-medium text-slate-900">{book.title}</p>
-          <input
-            type="text"
-            name="author"
-            defaultValue={book.author || ''}
-            required={noAuthor}
-            placeholder="Autor"
-            className={`mt-1 w-full rounded-md border px-2 py-1 text-sm ${
-              noAuthor ? 'border-red-400 bg-red-50' : authorMismatch ? 'border-red-300' : 'border-slate-200'
-            }`}
-          />
-          {noAuthor && <p className="mt-0.5 text-xs text-red-600">Este libro no tiene autor.</p>}
-          {book.amazon_author && (
-            <p className={`mt-0.5 text-xs ${authorMismatch ? 'text-red-600' : 'text-slate-500'}`}>
-              Amazon: {book.amazon_author.replace(/\s*\n\s*/g, ' ')}
-            </p>
-          )}
-
-          <IsbnCheck book={book} />
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            {hasAmazonCover && (
-              <button
-                type="submit"
-                name="choice"
-                value="amazon"
-                className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700"
-              >
-                Guardar y usar la de Amazon
-              </button>
-            )}
-            <button
-              type="submit"
-              name="choice"
-              value="current"
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
-            >
-              {hasAmazonCover ? 'Guardar y mantener la actual' : 'Guardar'}
-            </button>
-          </div>
-        </div>
-      </form>
-    </li>
-  );
-}
-
 function BookCard({ book, linkValue, note }) {
   return (
     <li className="flex gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -349,8 +224,6 @@ export default async function AmazonPage({ searchParams }) {
     getWaitingBooks(),
     getCoverChoiceBooks(),
   ]);
-  // Los que ya están en «Elegir portada» no se repiten en «Revisar portada y autor».
-  const reviewBooks = await getReviewBooks(new Set(coverChoiceBooks.map((b) => b.id)));
   const stale = isRunningStale(status);
   const canTrigger = status.status === 'idle' || stale;
   const failureByBook = Object.fromEntries(
@@ -462,22 +335,6 @@ export default async function AmazonPage({ searchParams }) {
           <ul className="mt-4 space-y-3">
             {coverChoiceBooks.map((book) => (
               <CoverChoiceCard key={book.id} book={book} />
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {reviewBooks.length > 0 && (
-        <div className="mt-10">
-          <h2 className="text-lg font-semibold">Revisar portada y autor ({reviewBooks.length})</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            Libros ya verificados que se guardaron con la portada de Open Library, o que no tienen autor. Escribe o corrige
-            el autor y elige si se queda la portada actual o la de Amazon. Los que no tienen autor siguen aquí hasta que
-            les pongas uno.
-          </p>
-          <ul className="mt-4 space-y-3">
-            {reviewBooks.map((book) => (
-              <ReviewCard key={book.id} book={book} />
             ))}
           </ul>
         </div>
