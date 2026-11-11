@@ -3,13 +3,13 @@ import IsbnCheck from '@/components/IsbnCheck';
 import ConfirmSubmitButton from '@/components/ConfirmSubmitButton';
 import { coverOrigin } from '@/lib/coverOrigin';
 import { manualCoverFilter } from '@/lib/manualCoverFilter';
-import { reviewCover, confirmManualCovers } from './actions';
+import { reviewCover, confirmManualCovers, changeAmazonLink } from './actions';
 
 export const dynamic = 'force-dynamic';
 
 const PAGE_SIZE = 30;
 const COLUMNS =
-  'id, title, author, isbn, isbn13, cover_url, cover_source, confirmation_method, confirmed, amazon_title, amazon_author, amazon_cover_url, amazon_isbn';
+  'id, title, author, isbn, isbn13, cover_url, cover_source, confirmation_method, confirmed, affiliate_url, amazon_title, amazon_author, amazon_cover_url, amazon_isbn';
 // Rechazados fuera: confirmed puede ser null (pendiente) o true (verificado).
 const NOT_REJECTED = 'confirmed.is.null,confirmed.eq.true';
 
@@ -78,6 +78,14 @@ function Banner({ params }) {
     return <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-900">{params.error}</p>;
   }
   if (params.saved) return <p className={ok}>«{params.saved}» guardado.</p>;
+  if (params.linked) {
+    return (
+      <p className={ok}>
+        Enlace de «{params.linked}» guardado. Se han borrado los datos de Amazon anteriores: lanza el proceso en la pestaña
+        Amazon y traerá la portada y los datos de tu enlace.
+      </p>
+    );
+  }
   if (params.bulk !== undefined) {
     return (
       <p className={ok}>
@@ -103,6 +111,8 @@ function CoverCard({ book }) {
   const hasCover = Boolean(book.cover_url);
   const hasAmazonCover = Boolean(book.amazon_cover_url);
   const authorMismatch = Boolean(book.amazon_author) && normalize(book.author) !== normalize(book.amazon_author);
+  const titleMismatch = Boolean(book.amazon_title) && normalize(book.title) !== normalize(book.amazon_title);
+  const searchTerm = book.isbn13 || book.isbn || `${book.title} ${book.author || ''}`.trim();
 
   return (
     <li className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -154,13 +164,43 @@ function CoverCard({ book }) {
             }`}
           />
           {noAuthor && <p className="mt-0.5 text-xs text-red-600">Este libro no tiene autor.</p>}
+          {book.amazon_title && (
+            <p className={`mt-0.5 text-xs ${titleMismatch ? 'text-red-600' : 'text-slate-500'}`}>
+              Amazon (título): {book.amazon_title}
+            </p>
+          )}
           {book.amazon_author && (
             <p className={`mt-0.5 text-xs ${authorMismatch ? 'text-red-600' : 'text-slate-500'}`}>
-              Amazon: {book.amazon_author.replace(/\s*\n\s*/g, ' ')}
+              Amazon (autor): {book.amazon_author.replace(/\s*\n\s*/g, ' ')}
             </p>
           )}
 
+          <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-0.5 text-xs text-slate-500 sm:grid-cols-3">
+            <div>
+              <dt className="inline font-medium">ISBN: </dt>
+              <dd className="inline">{book.isbn || '—'}</dd>
+            </div>
+            <div>
+              <dt className="inline font-medium">ISBN-13: </dt>
+              <dd className="inline">{book.isbn13 || '—'}</dd>
+            </div>
+            <div>
+              <dt className="inline font-medium">ISBN de Amazon: </dt>
+              <dd className="inline">{book.amazon_isbn || '—'}</dd>
+            </div>
+          </dl>
           <IsbnCheck book={book} />
+
+          <p className="mt-1 truncate text-xs text-slate-500">
+            <span className="font-medium">Enlace de Amazon: </span>
+            {book.affiliate_url ? (
+              <a href={book.affiliate_url} target="_blank" rel="noreferrer" className="text-blue-600 underline">
+                {book.affiliate_url}
+              </a>
+            ) : (
+              'sin enlace'
+            )}
+          </p>
 
           {!hasCover && !hasAmazonCover && (
             <p className="mt-2 text-xs text-slate-500">
@@ -201,6 +241,45 @@ function CoverCard({ book }) {
           </div>
         </div>
       </form>
+
+      <details className="mt-3">
+        <summary className="w-fit cursor-pointer list-none rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100">
+          Cambiar enlace de Amazon
+        </summary>
+        <form action={changeAmazonLink} className="mt-2 flex flex-col gap-2">
+          <input type="hidden" name="bookId" value={book.id} />
+          <p className="text-xs text-slate-500">
+            Si Amazon trae otro libro (el ISBN está mal), búscalo tú en Amazon
+            {' '}
+            (
+            <a
+              href={`https://www.amazon.es/s?k=${encodeURIComponent(searchTerm)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-blue-600 underline"
+            >
+              buscar en Amazon.es
+            </a>
+            ) y pega aquí tu enlace de afiliado. Se borran los datos de Amazon de este libro hasta que lances el proceso en la
+            pestaña Amazon, que leerá tu enlace y traerá su portada y sus datos.
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              name="affiliateUrl"
+              defaultValue={book.affiliate_url || ''}
+              placeholder="https://www.amazon.es/dp/XXXXXXXXXX?tag=hugomino0a-21"
+              className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm"
+            />
+            <button
+              type="submit"
+              className="flex-none rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800"
+            >
+              Guardar enlace
+            </button>
+          </div>
+        </form>
+      </details>
     </li>
   );
 }

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { manualCoverFilter } from '@/lib/manualCoverFilter';
+import { saveManualAmazonLink } from '@/lib/amazonLink';
 
 function fail(error) {
   redirect(`/portadas?${new URLSearchParams({ error })}`);
@@ -44,6 +45,19 @@ export async function reviewCover(formData) {
 
   revalidatePath('/portadas');
   redirect(`/portadas?${new URLSearchParams({ saved: book.title })}`);
+}
+
+// El ISBN del libro está mal y Amazon trae otro libro: el admin busca el correcto y pega su enlace de afiliado.
+// Se borran los datos de Amazon anteriores y el libro espera al proceso (pestaña Amazon), que lee el enlace.
+export async function changeAmazonLink(formData) {
+  const bookId = Number(formData.get('bookId'));
+  const result = await saveManualAmazonLink(bookId, formData.get('affiliateUrl'));
+  if (result.error) fail(result.error);
+
+  revalidatePath('/portadas');
+  revalidatePath('/amazon');
+  revalidatePath('/');
+  redirect(`/portadas?${new URLSearchParams({ linked: result.title })}`);
 }
 
 // Una sola vez: da por buenas las portadas de los libros que ya verificaste tú a mano. Repetirlo no hace daño
