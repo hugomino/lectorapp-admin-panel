@@ -19,6 +19,7 @@ export async function reviewCover(formData) {
   const bookId = Number(formData.get('bookId'));
   const choice = formData.get('choice')?.toString();
   const author = formData.get('author')?.toString().trim() || '';
+  const title = formData.get('title')?.toString().trim() || '';
   if (choice !== 'amazon' && choice !== 'current') redirect('/portadas');
 
   const supabase = supabaseAdmin();
@@ -35,6 +36,7 @@ export async function reviewCover(formData) {
 
   const updates = { cover_confirmed_at: new Date().toISOString() };
   if (author && author !== book.author) updates.author = author;
+  if (title && title !== book.title) updates.title = title;
   if (choice === 'amazon') {
     updates.cover_url = book.amazon_cover_url;
     updates.cover_source = 'amazon';
@@ -44,7 +46,7 @@ export async function reviewCover(formData) {
   if (error) fail(error.message);
 
   revalidatePath('/portadas');
-  redirect(`/portadas?${new URLSearchParams({ saved: book.title })}`);
+  redirect(`/portadas?${new URLSearchParams({ saved: updates.title || book.title })}`);
 }
 
 // El ISBN del libro está mal y Amazon trae otro libro: el admin busca el correcto y pega su enlace de afiliado.

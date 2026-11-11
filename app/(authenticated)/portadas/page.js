@@ -145,14 +145,21 @@ function CoverCard({ book }) {
         </div>
 
         <div className="min-w-0 flex-1">
-          <p className="font-medium text-slate-900">
-            {book.title}
-            {book.confirmed !== true && (
-              <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 align-middle text-[10px] font-semibold text-amber-800">
-                SIN VERIFICAR
-              </span>
-            )}
-          </p>
+          {book.confirmed !== true && (
+            <span className="mb-1 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+              SIN VERIFICAR
+            </span>
+          )}
+          <input
+            type="text"
+            name="title"
+            defaultValue={book.title || ''}
+            required
+            placeholder="Título"
+            className={`w-full rounded-md border px-2 py-1 text-sm font-medium ${
+              titleMismatch ? 'border-red-300 text-red-700' : 'border-slate-200 text-slate-900'
+            }`}
+          />
           <input
             type="text"
             name="author"
@@ -334,7 +341,7 @@ export default async function CoversPage({ searchParams }) {
         <div>
           <h1 className="text-xl font-semibold">Portadas</h1>
           <p className="text-sm text-slate-500">
-            Revisa la portada de los libros: la actual (la que dio el usuario o Open Library) frente a la de Amazon en alta
+            Revisa la portada, el título y el autor de los libros: la portada actual (la que dio el usuario o Open Library) frente a la de Amazon en alta
             calidad. Una vez confirmada, el libro sale de la lista.
           </p>
         </div>
